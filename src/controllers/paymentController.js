@@ -34,12 +34,9 @@ const createBill = async (req, res) => {
       return res.status(400).json({ message: 'Email and phone required' });
     }
 
-    // Validate agent code if provided
     let agent = null;
     if (agentCode) {
-      agent = await prisma.agent.findUnique({
-        where: { agentCode }
-      });
+      agent = await prisma.agent.findUnique({ where: { agentCode } });
       if (!agent || !agent.isActive) {
         return res.status(400).json({ message: 'Invalid agent code' });
       }
@@ -47,7 +44,6 @@ const createBill = async (req, res) => {
 
     const config = SHIELD_CONFIG[shieldType];
 
-    // Create parse request
     const parseRequest = await prisma.parseRequest.create({
       data: {
         email,
@@ -58,7 +54,6 @@ const createBill = async (req, res) => {
       }
     });
 
-    // Create ToyyibPay bill
     const billData = new URLSearchParams();
     billData.append('userSecretKey', TOYYIBPAY_SECRET_KEY);
     billData.append('categoryCode', config.categoryCode);
@@ -91,7 +86,6 @@ const createBill = async (req, res) => {
       return res.status(500).json({ message: 'Failed to create payment bill' });
     }
 
-    // Save bill code
     await prisma.parseRequest.update({
       where: { id: parseRequest.id },
       data: { billCode }
@@ -109,12 +103,26 @@ const createBill = async (req, res) => {
   }
 };
 
-// WEBHOOK
+// WEBHOOK — ToyyibPay sends: status_id, transaction_id, billcode, order_id
 const webhook = async (req, res) => {
   try {
-    const { refno, status, billcode, order_id } = req.body;
+    console.log('ToyyibPay webhook received:', req.body);
 
-    if (status !== '1') {
+    const {
+      status_id,
+      transaction_id,
+      billcode,
+      order_id
+    } = req.body;
+
+    // status_id 1 = success, 2 = pending, 3 = failed
+    if (status_id !== '1') {
+      console.log('Payment not successful. status_id:', status_id);
+      return res.status(200).send('OK');
+    }
+
+    if (!order_id) {
+      console.log('No order_id in webhook');
       return res.status(200).send('OK');
     }
 
@@ -123,23 +131,23 @@ const webhook = async (req, res) => {
     });
 
     if (!parseRequest) {
+      console.log('ParseRequest not found for order_id:', order_id);
       return res.status(200).send('OK');
     }
 
     if (parseRequest.status === 'PAID' || parseRequest.status === 'PARSED') {
+      console.log('Already processed:', order_id);
       return res.status(200).send('OK');
     }
 
-    // Mark as paid
     await prisma.parseRequest.update({
       where: { id: parseRequest.id },
       data: {
         status: 'PAID',
-        paymentRef: refno
+        paymentRef: transaction_id
       }
     });
 
-    // Credit agent commission if applicable
     if (parseRequest.agentCode) {
       await prisma.agent.update({
         where: { agentCode: parseRequest.agentCode },
@@ -148,16 +156,16 @@ const webhook = async (req, res) => {
           totalEarned: { increment: 5.00 }
         }
       });
+      console.log('Agent commission credited for:', parseRequest.agentCode);
     }
 
-    // Send confirmation email
     await sendPaymentConfirmationEmail(
       parseRequest.email,
       parseRequest.shieldType,
       parseRequest.id
     );
 
-    console.log(`Payment confirmed for ${parseRequest.email}`);
+    console.log('Payment confirmed for:', parseRequest.email);
     res.status(200).send('OK');
 
   } catch (error) {
