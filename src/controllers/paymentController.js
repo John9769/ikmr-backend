@@ -1,6 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const axios = require('axios');
-const { sendSubscriptionActivatedEmail } = require('../utils/emailService');
+const { sendPaymentConfirmationEmail } = require('../utils/emailService');
 
 const prisma = new PrismaClient();
 
@@ -11,53 +11,50 @@ const FRONTEND_URL = process.env.FRONTEND_URL;
 const SHIELD_CONFIG = {
   MOTOR: {
     categoryCode: process.env.TOYYIBPAY_CATEGORY_MOTOR,
-    amount: 2400,
-    label: 'IKMR Motor Shield'
+    amount: 1499,
+    label: 'IKMR Motor Rights Audit'
   },
   MEDICAL: {
     categoryCode: process.env.TOYYIBPAY_CATEGORY_MEDICAL,
-    amount: 2400,
-    label: 'IKMR Medical Shield'
-  },
-  BUNDLE: {
-    categoryCode: process.env.TOYYIBPAY_CATEGORY_BUNDLE,
-    amount: 4400,
-    label: 'IKMR Bundle Shield'
+    amount: 1499,
+    label: 'IKMR Medical Rights Audit'
   }
 };
 
 // CREATE BILL
 const createBill = async (req, res) => {
   try {
-    const { shieldType } = req.body;
-    const userId = req.userId;
+    const { shieldType, email, phone, agentCode } = req.body;
 
-    if (!['MOTOR', 'MEDICAL', 'BUNDLE'].includes(shieldType)) {
+    if (!['MOTOR', 'MEDICAL'].includes(shieldType)) {
       return res.status(400).json({ message: 'Invalid shield type' });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+    if (!email || !phone) {
+      return res.status(400).json({ message: 'Email and phone required' });
     }
 
-    // Check existing active subscription
-    const existingSub = await prisma.subscription.findFirst({
-      where: { userId, status: 'ACTIVE' }
-    });
-    if (existingSub) {
-      return res.status(400).json({ message: 'You already have an active subscription' });
+    // Validate agent code if provided
+    let agent = null;
+    if (agentCode) {
+      agent = await prisma.agent.findUnique({
+        where: { agentCode }
+      });
+      if (!agent || !agent.isActive) {
+        return res.status(400).json({ message: 'Invalid agent code' });
+      }
     }
 
     const config = SHIELD_CONFIG[shieldType];
 
-    // Create pending subscription
-    const subscription = await prisma.subscription.create({
+    // Create parse request
+    const parseRequest = await prisma.parseRequest.create({
       data: {
-        userId,
+        email,
+        phone,
         shieldType,
         status: 'PENDING',
-        amount: config.amount / 100
+        agentCode: agent ? agentCode : null
       }
     });
 
@@ -66,21 +63,21 @@ const createBill = async (req, res) => {
     billData.append('userSecretKey', TOYYIBPAY_SECRET_KEY);
     billData.append('categoryCode', config.categoryCode);
     billData.append('billName', config.label);
-    billData.append('billDescription', `${config.label} - Annual Subscription`);
+    billData.append('billDescription', `${config.label} - One Time Payment`);
     billData.append('billPriceSetting', 1);
     billData.append('billPayorInfo', 1);
     billData.append('billAmount', config.amount);
-    billData.append('billReturnUrl', `${FRONTEND_URL}/payment/success`);
+    billData.append('billReturnUrl', `${FRONTEND_URL}/parse?ref=${parseRequest.id}`);
     billData.append('billCallbackUrl', `${process.env.BACKEND_URL}/api/payment/webhook`);
-    billData.append('billExternalReferenceNo', subscription.id);
-    billData.append('billTo', user.name);
-    billData.append('billEmail', user.email);
-    billData.append('billPhone', user.phone);
+    billData.append('billExternalReferenceNo', parseRequest.id);
+    billData.append('billTo', email);
+    billData.append('billEmail', email);
+    billData.append('billPhone', phone);
     billData.append('billSplitPayment', 0);
     billData.append('billSplitPaymentArgs', '');
     billData.append('billPaymentChannel', 0);
     billData.append('billDisplayMerchant', 1);
-    billData.append('billContentEmail', `Thank you for subscribing to ${config.label}`);
+    billData.append('billContentEmail', `Thank you for your ${config.label} payment`);
     billData.append('billChargeToCustomer', 1);
 
     const response = await axios.post(
@@ -95,12 +92,13 @@ const createBill = async (req, res) => {
     }
 
     // Save bill code
-    await prisma.subscription.update({
-      where: { id: subscription.id },
+    await prisma.parseRequest.update({
+      where: { id: parseRequest.id },
       data: { billCode }
     });
 
     res.json({
+      parseRequestId: parseRequest.id,
       billCode,
       paymentUrl: `${TOYYIBPAY_BASE_URL}/${billCode}`
     });
@@ -114,53 +112,52 @@ const createBill = async (req, res) => {
 // WEBHOOK
 const webhook = async (req, res) => {
   try {
-    const {
-      refno,
-      status,
-      billcode,
-      order_id
-    } = req.body;
+    const { refno, status, billcode, order_id } = req.body;
 
-    // status 1 = success
     if (status !== '1') {
       return res.status(200).send('OK');
     }
 
-    const subscription = await prisma.subscription.findUnique({
-      where: { id: order_id },
-      include: { user: true }
+    const parseRequest = await prisma.parseRequest.findUnique({
+      where: { id: order_id }
     });
 
-    if (!subscription) {
+    if (!parseRequest) {
       return res.status(200).send('OK');
     }
 
-    if (subscription.status === 'ACTIVE') {
+    if (parseRequest.status === 'PAID' || parseRequest.status === 'PARSED') {
       return res.status(200).send('OK');
     }
 
-    const activatedAt = new Date();
-    const expiresAt = new Date(activatedAt);
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-
-    await prisma.subscription.update({
-      where: { id: subscription.id },
+    // Mark as paid
+    await prisma.parseRequest.update({
+      where: { id: parseRequest.id },
       data: {
-        status: 'ACTIVE',
-        paymentRef: refno,
-        activatedAt,
-        expiresAt
+        status: 'PAID',
+        paymentRef: refno
       }
     });
 
-    await sendSubscriptionActivatedEmail(
-      subscription.user.email,
-      subscription.user.name,
-      subscription.shieldType,
-      expiresAt
+    // Credit agent commission if applicable
+    if (parseRequest.agentCode) {
+      await prisma.agent.update({
+        where: { agentCode: parseRequest.agentCode },
+        data: {
+          pendingBalance: { increment: 5.00 },
+          totalEarned: { increment: 5.00 }
+        }
+      });
+    }
+
+    // Send confirmation email
+    await sendPaymentConfirmationEmail(
+      parseRequest.email,
+      parseRequest.shieldType,
+      parseRequest.id
     );
 
-    console.log(`Subscription activated for ${subscription.user.email}`);
+    console.log(`Payment confirmed for ${parseRequest.email}`);
     res.status(200).send('OK');
 
   } catch (error) {
@@ -169,102 +166,27 @@ const webhook = async (req, res) => {
   }
 };
 
-// GET SUBSCRIPTION STATUS
-const getSubscriptionStatus = async (req, res) => {
+// CHECK PAYMENT STATUS
+const checkPaymentStatus = async (req, res) => {
   try {
-    const userId = req.userId;
+    const { parseRequestId } = req.params;
 
-    const subscription = await prisma.subscription.findFirst({
-      where: { userId, status: 'ACTIVE' },
-      orderBy: { createdAt: 'desc' }
+    const parseRequest = await prisma.parseRequest.findUnique({
+      where: { id: parseRequestId }
     });
 
-    res.json({ subscription: subscription || null });
-
-  } catch (error) {
-    console.error('Get subscription error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// UPGRADE TO BUNDLE
-const upgradeToBunde = async (req, res) => {
-  try {
-    const userId = req.userId;
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+    if (!parseRequest) {
+      return res.status(404).json({ message: 'Request not found' });
     }
-
-    const existingSub = await prisma.subscription.findFirst({
-      where: { userId, status: 'ACTIVE' }
-    });
-
-    if (!existingSub) {
-      return res.status(400).json({ message: 'No active subscription found' });
-    }
-
-    if (existingSub.shieldType === 'BUNDLE') {
-      return res.status(400).json({ message: 'Already on Bundle Shield' });
-    }
-
-    const config = SHIELD_CONFIG['BUNDLE'];
-
-    // Create pending upgrade subscription
-    const subscription = await prisma.subscription.create({
-      data: {
-        userId,
-        shieldType: 'BUNDLE',
-        status: 'PENDING',
-        amount: config.amount / 100
-      }
-    });
-
-    const billData = new URLSearchParams();
-    billData.append('userSecretKey', TOYYIBPAY_SECRET_KEY);
-    billData.append('categoryCode', config.categoryCode);
-    billData.append('billName', 'IKMR Upgrade to Bundle Shield');
-    billData.append('billDescription', 'Upgrade to Motor + Medical Bundle Shield');
-    billData.append('billPriceSetting', 1);
-    billData.append('billPayorInfo', 1);
-    billData.append('billAmount', config.amount);
-    billData.append('billReturnUrl', `${FRONTEND_URL}/payment/success`);
-    billData.append('billCallbackUrl', `${process.env.BACKEND_URL}/api/payment/webhook`);
-    billData.append('billExternalReferenceNo', subscription.id);
-    billData.append('billTo', user.name);
-    billData.append('billEmail', user.email);
-    billData.append('billPhone', user.phone);
-    billData.append('billSplitPayment', 0);
-    billData.append('billSplitPaymentArgs', '');
-    billData.append('billPaymentChannel', 0);
-    billData.append('billDisplayMerchant', 1);
-    billData.append('billContentEmail', 'Thank you for upgrading to Bundle Shield');
-    billData.append('billChargeToCustomer', 1);
-
-    const response = await axios.post(
-      `${TOYYIBPAY_BASE_URL}/index.php/api/createBill`,
-      billData.toString(),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
-
-    const billCode = response.data[0]?.BillCode;
-    if (!billCode) {
-      return res.status(500).json({ message: 'Failed to create payment bill' });
-    }
-
-    await prisma.subscription.update({
-      where: { id: subscription.id },
-      data: { billCode }
-    });
 
     res.json({
-      billCode,
-      paymentUrl: `${TOYYIBPAY_BASE_URL}/${billCode}`
+      status: parseRequest.status,
+      shieldType: parseRequest.shieldType,
+      parseRequestId: parseRequest.id
     });
 
   } catch (error) {
-    console.error('Upgrade error:', error);
+    console.error('Check status error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -272,6 +194,5 @@ const upgradeToBunde = async (req, res) => {
 module.exports = {
   createBill,
   webhook,
-  getSubscriptionStatus,
-  upgradeToBunde
+  checkPaymentStatus
 };

@@ -1,9 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
 const { parsePolicy } = require('../controllers/parserController');
-const authMiddleware = require('../middleware/authMiddleware');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -26,9 +24,9 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-router.post('/parse', authMiddleware, upload.single('policy'), parsePolicy);
+router.post('/parse', upload.single('policy'), parsePolicy);
 
 module.exports = router;

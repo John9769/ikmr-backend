@@ -7,50 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id             String    @id @default(cuid())
+model ParseRequest {
+  id          String      @id @default(cuid())
+  email       String
+  phone       String
+  shieldType  ShieldType
+  billCode    String?
+  paymentRef  String?
+  status      ParseStatus @default(PENDING)
+  agentCode   String?
+  createdAt   DateTime    @default(now())
+
+  agent       Agent?      @relation(fields: [agentCode], references: [agentCode])
+}
+
+model Agent {
+  id             String         @id @default(cuid())
   name           String
-  email          String    @unique
-  phone          String    @unique
-  password       String
-  resetToken     String?
-  resetExpires   DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  email          String         @unique
+  phone          String         @unique
+  agentCode      String         @unique
+  bankName       String?
+  bankAccount    String?
+  pendingBalance Float          @default(0)
+  totalEarned    Float          @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
 
-  subscriptions  Subscription[]
-  shields        ParsedShield[]
+  parseRequests  ParseRequest[]
+  payouts        Payout[]
 }
 
-model Subscription {
-  id                String    @id @default(cuid())
-  userId            String
-  shieldType        ShieldType
-  status            SubStatus @default(PENDING)
-  paymentRef        String?
-  billCode          String?
-  amount            Float
-  activatedAt       DateTime?
-  expiresAt         DateTime?
-  reminder30Sent    Boolean   @default(false)
-  reminder7Sent     Boolean   @default(false)
-  expiredNoticeSent Boolean   @default(false)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+model Payout {
+  id        String       @id @default(cuid())
+  agentId   String
+  amount    Float
+  status    PayoutStatus @default(PENDING)
+  paidAt    DateTime?
+  createdAt DateTime     @default(now())
 
-  user              User      @relation(fields: [userId], references: [id])
-}
-
-model ParsedShield {
-  id           String      @id @default(cuid())
-  userId       String
-  shieldType   ShieldType
-  insurerName  String?
-  parsedJson   Json
-  uploadedAt   DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  user         User        @relation(fields: [userId], references: [id])
+  agent     Agent        @relation(fields: [agentId], references: [id])
 }
 
 model Admin {
@@ -63,12 +59,16 @@ model Admin {
 enum ShieldType {
   MOTOR
   MEDICAL
-  BUNDLE
 }
 
-enum SubStatus {
+enum ParseStatus {
   PENDING
-  ACTIVE
-  EXPIRED
-  CANCELLED
+  PAID
+  PARSED
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
 }

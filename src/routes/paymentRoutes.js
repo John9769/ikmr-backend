@@ -3,14 +3,11 @@ const router = express.Router();
 const {
   createBill,
   webhook,
-  getSubscriptionStatus,
-  upgradeToBunde
+  checkPaymentStatus
 } = require('../controllers/paymentController');
-const authMiddleware = require('../middleware/authMiddleware');
 
-router.post('/create-bill', authMiddleware, createBill);
+router.post('/create-bill', createBill);
 router.post('/webhook', webhook);
-router.get('/subscription', authMiddleware, getSubscriptionStatus);
-router.post('/upgrade', authMiddleware, upgradeToBunde);
+router.get('/status/:parseRequestId', checkPaymentStatus);
 
 module.exports = router;

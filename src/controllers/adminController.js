@@ -63,76 +63,80 @@ const getDashboardStats = async (req, res) => {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-    const totalUsers = await prisma.user.count();
+    // Total parses
+    const totalParses = await prisma.parseRequest.count({
+      where: { status: 'PARSED' }
+    });
 
-    const motorCount = await prisma.subscription.count({
-      where: { status: 'ACTIVE', shieldType: 'MOTOR' }
+    // Motor vs Medical
+    const motorCount = await prisma.parseRequest.count({
+      where: { status: 'PARSED', shieldType: 'MOTOR' }
     });
-    const medicalCount = await prisma.subscription.count({
-      where: { status: 'ACTIVE', shieldType: 'MEDICAL' }
-    });
-    const bundleCount = await prisma.subscription.count({
-      where: { status: 'ACTIVE', shieldType: 'BUNDLE' }
-    });
-    const totalActive = motorCount + medicalCount + bundleCount;
 
-    const revenueMTD = await prisma.subscription.aggregate({
+    const medicalCount = await prisma.parseRequest.count({
+      where: { status: 'PARSED', shieldType: 'MEDICAL' }
+    });
+
+    // Revenue MTD
+    const revenueMTDData = await prisma.parseRequest.count({
       where: {
-        status: 'ACTIVE',
-        activatedAt: { gte: startOfMonth }
-      },
-      _sum: { amount: true }
+        status: 'PARSED',
+        createdAt: { gte: startOfMonth }
+      }
+    });
+    const revenueMTD = revenueMTDData * 14.99;
+
+    // Revenue YTD
+    const revenueYTDData = await prisma.parseRequest.count({
+      where: {
+        status: 'PARSED',
+        createdAt: { gte: startOfYear }
+      }
+    });
+    const revenueYTD = revenueYTDData * 14.99;
+
+    // Agent stats
+    const totalAgents = await prisma.agent.count({
+      where: { isActive: true }
     });
 
-    const revenueYTD = await prisma.subscription.aggregate({
+    const agentParses = await prisma.parseRequest.count({
       where: {
-        status: 'ACTIVE',
-        activatedAt: { gte: startOfYear }
-      },
-      _sum: { amount: true }
-    });
-
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const expiringThisMonth = await prisma.subscription.count({
-      where: {
-        status: 'ACTIVE',
-        expiresAt: { gte: now, lte: endOfMonth }
+        status: 'PARSED',
+        agentCode: { not: null }
       }
     });
 
-    const recentUsers = await prisma.user.findMany({
+    const totalAgentCommissions = await prisma.agent.aggregate({
+      _sum: { totalEarned: true }
+    });
+
+    // Pending payouts
+    const pendingPayouts = await prisma.agent.aggregate({
+      where: { pendingBalance: { gt: 0 } },
+      _sum: { pendingBalance: true }
+    });
+
+    // Recent parse requests
+    const recentParses = await prisma.parseRequest.findMany({
       take: 10,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        createdAt: true,
-        subscriptions: {
-          where: { status: 'ACTIVE' },
-          select: {
-            shieldType: true,
-            activatedAt: true,
-            expiresAt: true,
-            amount: true
-          }
-        }
-      }
+      orderBy: { createdAt: 'desc' }
     });
 
     res.json({
       stats: {
-        totalUsers,
-        totalActive,
+        totalParses,
         motorCount,
         medicalCount,
-        bundleCount,
-        revenueMTD: revenueMTD._sum.amount || 0,
-        revenueYTD: revenueYTD._sum.amount || 0,
-        expiringThisMonth
+        revenueMTD: revenueMTD.toFixed(2),
+        revenueYTD: revenueYTD.toFixed(2),
+        totalAgents,
+        agentParses,
+        directParses: totalParses - agentParses,
+        totalAgentCommissions: totalAgentCommissions._sum.totalEarned || 0,
+        pendingPayouts: pendingPayouts._sum.pendingBalance || 0
       },
-      recentUsers
+      recentParses
     });
 
   } catch (error) {
@@ -141,85 +145,30 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
-// GET ALL USERS
-const getAllUsers = async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
-
-    const users = await prisma.user.findMany({
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        createdAt: true,
-        subscriptions: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: {
-            shieldType: true,
-            status: true,
-            amount: true,
-            activatedAt: true,
-            expiresAt: true
-          }
-        }
-      }
-    });
-
-    const total = await prisma.user.count();
-
-    res.json({
-      users,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      }
-    });
-
-  } catch (error) {
-    console.error('Get all users error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// GET ALL SUBSCRIPTIONS
-const getAllSubscriptions = async (req, res) => {
+// GET ALL PARSE REQUESTS
+const getAllParseRequests = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const status = req.query.status || undefined;
+    const shieldType = req.query.shieldType || undefined;
 
-    const where = status ? { status } : {};
+    const where = {};
+    if (status) where.status = status;
+    if (shieldType) where.shieldType = shieldType;
 
-    const subscriptions = await prisma.subscription.findMany({
+    const parses = await prisma.parseRequest.findMany({
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            phone: true
-          }
-        }
-      }
+      orderBy: { createdAt: 'desc' }
     });
 
-    const total = await prisma.subscription.count({ where });
+    const total = await prisma.parseRequest.count({ where });
 
     res.json({
-      subscriptions,
+      parses,
       pagination: {
         total,
         page,
@@ -229,7 +178,72 @@ const getAllSubscriptions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get subscriptions error:', error);
+    console.error('Get parse requests error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// GET ALL AGENTS
+const getAllAgents = async (req, res) => {
+  try {
+    const agents = await prisma.agent.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: {
+          select: { parseRequests: true }
+        }
+      }
+    });
+
+    res.json({ agents });
+
+  } catch (error) {
+    console.error('Get agents error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// MARK AGENT PAYOUT DONE
+const markPayoutDone = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId }
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: 'Agent not found' });
+    }
+
+    const amount = agent.pendingBalance;
+
+    if (amount <= 0) {
+      return res.status(400).json({ message: 'No pending balance' });
+    }
+
+    // Create payout record
+    await prisma.payout.create({
+      data: {
+        agentId,
+        amount,
+        status: 'PAID',
+        paidAt: new Date()
+      }
+    });
+
+    // Reset pending balance
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { pendingBalance: 0 }
+    });
+
+    res.json({
+      message: `Payout of RM${amount.toFixed(2)} marked as done for ${agent.name}`
+    });
+
+  } catch (error) {
+    console.error('Mark payout error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -266,7 +280,8 @@ module.exports = {
   adminLogin,
   adminAuthMiddleware,
   getDashboardStats,
-  getAllUsers,
-  getAllSubscriptions,
+  getAllParseRequests,
+  getAllAgents,
+  markPayoutDone,
   seedAdmin
 };
