@@ -100,6 +100,10 @@ const getDashboardStats = async (req, res) => {
       where: { isActive: true }
     });
 
+    const pendingAgents = await prisma.agent.count({
+      where: { isActive: false }
+    });
+
     const agentParses = await prisma.parseRequest.count({
       where: {
         status: 'PARSED',
@@ -131,6 +135,7 @@ const getDashboardStats = async (req, res) => {
         revenueMTD: revenueMTD.toFixed(2),
         revenueYTD: revenueYTD.toFixed(2),
         totalAgents,
+        pendingAgents,
         agentParses,
         directParses: totalParses - agentParses,
         totalAgentCommissions: totalAgentCommissions._sum.totalEarned || 0,
@@ -199,6 +204,61 @@ const getAllAgents = async (req, res) => {
 
   } catch (error) {
     console.error('Get agents error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// APPROVE AGENT
+const approveAgent = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId }
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: 'Agent not found' });
+    }
+
+    if (agent.isActive) {
+      return res.status(400).json({ message: 'Agent already active' });
+    }
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { isActive: true }
+    });
+
+    res.json({ message: `Agent ${agent.name} (${agent.agentCode}) approved` });
+
+  } catch (error) {
+    console.error('Approve agent error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// REJECT AGENT
+const rejectAgent = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId }
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: 'Agent not found' });
+    }
+
+    await prisma.agent.delete({
+      where: { id: agentId }
+    });
+
+    res.json({ message: `Agent ${agent.name} rejected and removed` });
+
+  } catch (error) {
+    console.error('Reject agent error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -282,6 +342,8 @@ module.exports = {
   getDashboardStats,
   getAllParseRequests,
   getAllAgents,
+  approveAgent,
+  rejectAgent,
   markPayoutDone,
   seedAdmin
 };
