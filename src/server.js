@@ -12,6 +12,21 @@ const agentRoutes = require('./routes/agentRoutes');
 const app = express();
 
 app.use(cors());
+
+// ToyyibPay webhook fix: their callback doesn't always send a proper
+// Content-Type header, so express.urlencoded() silently returns {}.
+// Intercept this specific route BEFORE the general body parsers and
+// parse the raw bytes as x-www-form-urlencoded manually.
+app.use('/api/payment/webhook', express.raw({ type: '*/*' }), (req, res, next) => {
+  try {
+    const raw = req.body.toString('utf8');
+    req.body = Object.fromEntries(new URLSearchParams(raw));
+  } catch (e) {
+    req.body = {};
+  }
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
