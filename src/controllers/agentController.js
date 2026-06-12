@@ -24,10 +24,10 @@ const generateAgentCode = async () => {
 // REGISTER AGENT
 const registerAgent = async (req, res) => {
   try {
-    const { name, email, phone, bankName, bankAccount } = req.body;
+    const { name, email, phone, licenseNumber, insurerName, bankName, bankAccount } = req.body;
 
-    if (!name || !email || !phone) {
-      return res.status(400).json({ message: 'Name, email and phone required' });
+    if (!name || !email || !phone || !licenseNumber || !insurerName) {
+      return res.status(400).json({ message: 'Name, email, phone, license number and insurer name are required' });
     }
 
     const existing = await prisma.agent.findUnique({ where: { email } });
@@ -42,20 +42,23 @@ const registerAgent = async (req, res) => {
         name,
         email,
         phone,
+        licenseNumber,
+        insurerName,
         bankName: bankName || null,
         bankAccount: bankAccount || null,
         agentCode,
-        isActive: true
+        isActive: false
       }
     });
 
     await sendAgentWelcomeEmail(agent.email, agent.name, agent.agentCode);
 
     res.status(201).json({
-      message: 'Agent registered successfully',
+      message: 'Registration received. Your account is pending verification. You will be notified once approved.',
       agentCode: agent.agentCode,
       name: agent.name,
-      email: agent.email
+      email: agent.email,
+      status: 'PENDING'
     });
 
   } catch (error) {

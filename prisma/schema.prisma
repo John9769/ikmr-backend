@@ -27,11 +27,13 @@ model Agent {
   email          String         @unique
   phone          String         @unique
   agentCode      String         @unique
+  licenseNumber  String?
+  insurerName    String?
   bankName       String?
   bankAccount    String?
   pendingBalance Float          @default(0)
   totalEarned    Float          @default(0)
-  isActive       Boolean        @default(true)
+  isActive       Boolean        @default(false)
   createdAt      DateTime       @default(now())
 
   parseRequests  ParseRequest[]

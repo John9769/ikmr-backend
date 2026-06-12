@@ -67,12 +67,12 @@ Return ONLY valid JSON. No explanation. No markdown. No extra text.
     "named_driver": "Named driver or All Drivers"
   },
   "rights_brief": {
-    "valuation_rights": "Plain language explanation of what agreed/market value means for THIS policyholder with the exact amount. What they are entitled to in total loss. What warning applies.",
-    "ncd_rights": "Plain language explanation of their NCD protection. What they must do to protect it. What voids it.",
-    "towing_rights": "Plain language towing rights. Exact script in Bahasa Malaysia to say to tow truck driver.",
-    "windscreen_rights": "Plain language windscreen rights. Whether it affects NCD. What to do.",
-    "hidden_clause_warnings": "Any concerning clauses, limitations, or missing coverage that the policyholder should know about. Be specific. If none found, state NONE DETECTED.",
-    "emergency_action": "Step by step what to do in first 10 minutes after an accident. Specific and actionable."
+    "valuation_rights": "Explanation in Bahasa Malaysia (mixing standard English insurance terms naturally, e.g. 'Agreed Value', 'NCD') of what agreed/market value means for THIS policyholder with the exact amount. What they are entitled to in total loss. What warning applies.",
+    "ncd_rights": "Explanation in Bahasa Malaysia of their NCD protection. What they must do to protect it. What voids it.",
+    "towing_rights": "Explanation in Bahasa Malaysia of towing rights, including the exact script to say to the tow truck driver.",
+    "windscreen_rights": "Explanation in Bahasa Malaysia of windscreen rights. Whether it affects NCD. What to do.",
+    "hidden_clause_warnings": "Warning in Bahasa Malaysia about any concerning clauses, limitations, or missing coverage. Be specific. If none found, state NONE DETECTED.",
+    "emergency_action": "Step by step in Bahasa Malaysia what to do in the first 10 minutes after an accident. Specific and actionable, written as if speaking directly to the policyholder."
   }
 }
 
@@ -103,12 +103,12 @@ Return ONLY valid JSON. No explanation. No markdown. No extra text.
     "panel_network": "Insurer name for panel lookup"
   },
   "rights_brief": {
-    "ward_entitlement": "Exact ward type and hospitals they are entitled to based on their R&B limit. What to say to admission counter. What to reject.",
-    "annual_limit_rights": "Plain language explanation of their annual limit. Whether they are at risk of exceeding it.",
-    "copayment_rights": "Plain language explanation of co-payment status. If YES - exact ringgit impact on a typical claim. If NO - confirmation they pay zero at discharge.",
-    "maturity_rights": "Based on inception date and waiting period - are they fully matured? What is and is not covered right now.",
-    "hidden_clause_warnings": "Any concerning clauses, premium escalation risk, coverage gaps, or things the agent may not have explained. Be specific. If none found, state NONE DETECTED.",
-    "emergency_action": "Step by step what to do when arriving at hospital for admission. Specific script to use at counter."
+    "ward_entitlement": "Explanation in Bahasa Malaysia of the exact ward type and hospitals they are entitled to based on their R&B limit, including the exact script to say at the admission counter and what to reject.",
+    "annual_limit_rights": "Explanation in Bahasa Malaysia of their annual limit. Whether they are at risk of exceeding it.",
+    "copayment_rights": "Explanation in Bahasa Malaysia of co-payment status. If YES - exact ringgit impact on a typical claim. If NO - confirmation they pay zero at discharge.",
+    "maturity_rights": "Explanation in Bahasa Malaysia, based on inception date and waiting period, of whether they are fully matured and what is/is not covered right now.",
+    "hidden_clause_warnings": "Warning in Bahasa Malaysia about any concerning clauses, premium escalation risk, coverage gaps, or things the agent may not have explained. Be specific. If none found, state NONE DETECTED.",
+    "emergency_action": "Step by step in Bahasa Malaysia what to do when arriving at hospital for admission, including the exact script to use at the counter."
   }
 }
 

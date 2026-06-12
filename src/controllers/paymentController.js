@@ -40,6 +40,10 @@ const createBill = async (req, res) => {
       if (!agent || !agent.isActive) {
         return res.status(400).json({ message: 'Invalid agent code' });
       }
+      // Block self-referral
+      if (agent.email.toLowerCase() === email.toLowerCase() || agent.phone === phone) {
+        return res.status(400).json({ message: 'You cannot use your own agent code' });
+      }
     }
 
     const config = SHIELD_CONFIG[shieldType];
