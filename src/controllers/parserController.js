@@ -1,7 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const cloudinary = require('cloudinary').v2;
 const { PrismaClient } = require('@prisma/client');
-const fs = require('fs');
 
 const prisma = new PrismaClient();
 
@@ -118,7 +117,6 @@ For rights_brief, always provide helpful guidance even with limited data.`;
 // PARSE POLICY
 const parsePolicy = async (req, res) => {
   let cloudinaryPublicId = null;
-  let localFilePath = null;
 
   try {
     const { parseRequestId, shieldType } = req.body;
@@ -152,20 +150,18 @@ const parsePolicy = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    localFilePath = req.file.path;
+    // req.file.buffer is available directly via multer memoryStorage — no disk I/O
+    const fileBuffer = req.file.buffer;
+    const mimeType = req.file.mimetype;
+    const base64File = fileBuffer.toString('base64');
 
-    // Upload to Cloudinary temporarily
-    const uploadResult = await cloudinary.uploader.upload(localFilePath, {
+    // Upload to Cloudinary from buffer (data URI) — temporary, deleted right after
+    const dataUri = `data:${mimeType};base64,${base64File}`;
+    const uploadResult = await cloudinary.uploader.upload(dataUri, {
       folder: 'ikmr-temp',
       resource_type: 'auto'
     });
-
     cloudinaryPublicId = uploadResult.public_id;
-
-    // Read file as base64
-    const fileBuffer = fs.readFileSync(localFilePath);
-    const base64File = fileBuffer.toString('base64');
-    const mimeType = req.file.mimetype;
 
     const prompt = shieldType === 'MOTOR' ? MOTOR_PROMPT : MEDICAL_PROMPT;
 
@@ -199,10 +195,6 @@ const parsePolicy = async (req, res) => {
       resource_type: uploadResult.resource_type
     });
     cloudinaryPublicId = null;
-
-    // Delete local temp file
-    fs.unlinkSync(localFilePath);
-    localFilePath = null;
 
     // Parse Claude response
     const responseText = message.content[0].text.trim();
@@ -269,10 +261,6 @@ const parsePolicy = async (req, res) => {
       } catch (e) {
         console.error('Cloudinary cleanup error:', e);
       }
-    }
-
-    if (localFilePath && fs.existsSync(localFilePath)) {
-      fs.unlinkSync(localFilePath);
     }
 
     // Mark as failed
