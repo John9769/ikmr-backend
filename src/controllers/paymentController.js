@@ -107,21 +107,22 @@ const createBill = async (req, res) => {
   }
 };
 
-// WEBHOOK — ToyyibPay sends: status_id, transaction_id, billcode, order_id
+// WEBHOOK — ToyyibPay actual payload: refno, status, reason, billcode, order_id,
+// transaction_id, fpx_transaction_id, hash, transaction_time, msg
 const webhook = async (req, res) => {
   try {
     console.log('ToyyibPay webhook received:', req.body);
 
     const {
-      status_id,
+      status,
       transaction_id,
       billcode,
       order_id
     } = req.body;
 
-    // status_id 1 = success, 2 = pending, 3 = failed
-    if (status_id !== '1') {
-      console.log('Payment not successful. status_id:', status_id);
+    // status 1 = success, 2 = pending, 3 = failed
+    if (status !== '1') {
+      console.log('Payment not successful. status:', status);
       return res.status(200).send('OK');
     }
 
